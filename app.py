@@ -203,6 +203,18 @@ def get_this_week_history(df, current_date=None):
 # 반복 이벤트 찾기
 def find_recurring_events(df, month):
     """특정 월의 반복 이벤트 찾기"""
+    # 데이터 검증
+    if df is None or df.empty:
+        return pd.DataFrame()
+    
+    if '날짜' not in df.columns:
+        return pd.DataFrame()
+    
+    # 날짜가 datetime인지 확인
+    if not pd.api.types.is_datetime64_any_dtype(df['날짜']):
+        df = df.copy()
+        df['날짜'] = pd.to_datetime(df['날짜'], errors='coerce')
+    
     month_data = df[df['날짜'].dt.month == month].copy()
     
     if month_data.empty:
@@ -221,12 +233,32 @@ def find_recurring_events(df, month):
 # 다음 달 광고 추천
 def suggest_next_month_ads(df, target_month):
     """Gemini API로 다음 달 광고 추천 (재시도 로직 포함)"""
-    month_data = df[df['날짜'].dt.month == target_month]
+    # 데이터 검증
+    if df is None or df.empty:
+        return "❌ 데이터가 없습니다."
+    
+    if '날짜' not in df.columns:
+        return "❌ 날짜 컬럼이 없습니다."
+    
+    # 날짜가 datetime인지 확인
+    if not pd.api.types.is_datetime64_any_dtype(df['날짜']):
+        df = df.copy()
+        df['날짜'] = pd.to_datetime(df['날짜'], errors='coerce')
+        df = df.dropna(subset=['날짜'])
+    
+    month_data = df[df['날짜'].dt.month == target_month].copy()
+    
+    if month_data.empty:
+        return f"❌ {target_month}월 데이터가 없습니다."
+    
     recurring = find_recurring_events(df, target_month)
+    
+    # 날짜를 문자열로 변환 (JSON 직렬화를 위해)
+    month_data['날짜'] = month_data['날짜'].dt.strftime('%Y-%m-%d')
     
     # 데이터 준비
     past_events = month_data[['날짜', '카테고리', '제목', '내용']].head(50).to_dict('records')
-    recurring_events = recurring.head(20).to_dict('index')
+    recurring_events = recurring.head(20).reset_index().to_dict('records') if not recurring.empty else []
     
     prompt = f"""다음은 성서교회의 과거 {target_month}월 주보 데이터입니다.
 
