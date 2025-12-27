@@ -1,0 +1,39 @@
+# Streamlit secrets
+.streamlit/secrets.toml
+secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Google Cloud credentials
+*.json
+service-account*.json
+credentials.json
+
+# Data files
+*.xlsx
+*.xls
+*.csv
+output/
+
+# Logs
+*.log
