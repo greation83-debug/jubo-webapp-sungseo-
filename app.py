@@ -151,9 +151,15 @@ def call_gemini_with_retry(prompt, generation_config):
     
     return "❌ API 호출 실패"
 
-# 이번 주 과거 기록
-def get_this_week_history(df, current_date=None):
-    """현재 주차의 과거 기록 조회"""
+# 특정 주차 과거 기록 (지난주/이번주/다음주)
+def get_week_history(df, current_date=None, weeks_offset=0):
+    """특정 주차의 과거 기록 조회
+    
+    Args:
+        df: 데이터프레임
+        current_date: 기준 날짜
+        weeks_offset: 주차 오프셋 (-1: 지난주, 0: 이번주, 1: 다음주)
+    """
     if current_date is None:
         current_date = datetime.now()
     
@@ -175,8 +181,12 @@ def get_this_week_history(df, current_date=None):
     if df.empty:
         return {}
     
-    current_week = current_date.isocalendar()[1]
-    current_month = current_date.month
+    # 오프셋 적용 (weeks_offset 주 전/후)
+    from datetime import timedelta
+    target_date = current_date + timedelta(weeks=weeks_offset)
+    
+    current_week = target_date.isocalendar()[1]
+    current_month = target_date.month
     
     history = {}
     
@@ -184,6 +194,21 @@ def get_this_week_history(df, current_date=None):
     min_year = int(df['날짜'].dt.year.min())
     
     for year in range(min_year, current_date.year):
+        year_data = df[
+            (df['날짜'].dt.year == year) &
+            (
+                (df['날짜'].dt.isocalendar().week == current_week) |
+                (
+                    (df['날짜'].dt.month == current_month) &
+                    (df['날짜'].dt.day.between(target_date.day - 7, target_date.day + 7))
+                )
+            )
+        ]
+        
+        if not year_data.empty:
+            history[year] = year_data
+    
+    return history
         year_data = df[
             (df['날짜'].dt.year == year) &
             (
@@ -339,66 +364,144 @@ def main():
     
     # 탭 1: 이번 주 과거 기록
     with tab1:
-        st.header("📅 이번 주 과거 기록")
-        st.info("💡 작년 이맘때는 어떤 일이 있었을까요?")
+        st.header("📅 과거 기록 (3주)")
         
         current_date = datetime.now()
-        history = get_this_week_history(df, current_date)
         
-        if not history:
-            st.warning("과거 기록이 없습니다.")
-        else:
-            # 카테고리별 색상 매핑
-            category_colors = {
-                '행사': '🎉',
-                '교육': '📚',
-                '예배': '🙏',
-                '봉사': '🤝',
-                '모임': '👥',
-                '공지': '📢',
-                '광고': '📣'
-            }
+        # 주차 정보 계산
+        from datetime import timedelta
+        last_week_date = current_date - timedelta(weeks=1)
+        next_week_date = current_date + timedelta(weeks=1)
+        
+        # 3개 서브탭: 지난주, 이번주, 다음주
+        week_tab1, week_tab2, week_tab3 = st.tabs([
+            f"← 지난주 ({last_week_date.strftime('%m/%d')}주)",
+            f"⭐ 이번 주 ({current_date.strftime('%m/%d')}주)",
+            f"다음 주 → ({next_week_date.strftime('%m/%d')}주)"
+        ])
+        
+        # 카테고리 색상 매핑
+        category_colors = {
+            '행사': '🎉', '교육': '📚', '예배': '🙏', 
+            '봉사': '🤝', '모임': '👥', '공지': '📢', '광고': '📣'
+        }
+        
+        # 서브탭 1: 지난주
+        with week_tab1:
+            st.info("💡 지난주에는 무엇을 준비했을까요?")
+            history = get_week_history(df, current_date, weeks_offset=-1)
             
-            for year in sorted(history.keys(), reverse=True):
-                with st.expander(f"📅 {year}년 이맘때 ({len(history[year])}개)", expanded=(year == max(history.keys()))):
-                    year_df = history[year].sort_values('날짜')
-                    
-                    # 요약 통계
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("전체", f"{len(year_df)}개")
-                    with col2:
-                        most_common_cat = year_df['카테고리'].mode()[0] if len(year_df) > 0 else '-'
-                        st.metric("주요 카테고리", most_common_cat)
-                    with col3:
-                        date_range = f"{year_df['날짜'].min().strftime('%m/%d')} ~ {year_df['날짜'].max().strftime('%m/%d')}"
-                        st.metric("기간", date_range)
-                    
-                    st.markdown("---")
-                    
-                    # 테이블 형식으로 표시
-                    for _, row in year_df.iterrows():
-                        col1, col2 = st.columns([3, 1])
+            if not history:
+                st.warning("지난주 과거 기록이 없습니다.")
+            else:
+                for year in sorted(history.keys(), reverse=True):
+                    with st.expander(f"📅 {year}년 지난주 ({len(history[year])}개)", expanded=True):
+                        year_df = history[year].sort_values('날짜').copy()
                         
-                        with col1:
-                            # 카테고리 아이콘 + 제목
-                            icon = category_colors.get(row['카테고리'], '📌')
-                            st.markdown(f"**{icon} {row['제목']}**")
-                            
-                            # 내용 (짧게 표시)
-                            if pd.notna(row['내용']) and len(str(row['내용'])) > 0:
-                                content = str(row['내용'])
-                                # 50자까지만 표시, 나머지는 ... 처리
-                                short_content = content[:50] + ('...' if len(content) > 50 else '')
-                                with st.expander("📄 내용 보기"):
-                                    st.write(content)
-                                st.caption(short_content)
+                        # 표시용 데이터 준비
+                        display_df = year_df[['날짜', '카테고리', '제목', '내용']].copy()
+                        display_df['날짜'] = display_df['날짜'].dt.strftime('%m/%d')
                         
-                        with col2:
-                            st.caption(f"📅 {row['날짜'].strftime('%m/%d')}")
-                            st.caption(f"🏷️ {row['카테고리']}")
+                        # 내용 축약
+                        display_df['내용'] = display_df['내용'].fillna('').astype(str).apply(
+                            lambda x: x[:50] + ('...' if len(x) > 50 else '')
+                        )
                         
-                        st.markdown("---")
+                        # 카테고리에 아이콘 추가
+                        display_df['카테고리'] = display_df['카테고리'].apply(
+                            lambda x: f"{category_colors.get(x, '📌')} {x}"
+                        )
+                        
+                        # 표로 표시
+                        st.dataframe(
+                            display_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "날짜": st.column_config.TextColumn("날짜", width="small"),
+                                "카테고리": st.column_config.TextColumn("카테고리", width="small"),
+                                "제목": st.column_config.TextColumn("제목", width="medium"),
+                                "내용": st.column_config.TextColumn("내용", width="large"),
+                            }
+                        )
+        
+        # 서브탭 2: 이번주
+        with week_tab2:
+            st.info("💡 올해 이번 주에는 무엇을 준비해야 할까요?")
+            history = get_week_history(df, current_date, weeks_offset=0)
+            
+            if not history:
+                st.warning("이번 주 과거 기록이 없습니다.")
+            else:
+                for year in sorted(history.keys(), reverse=True):
+                    with st.expander(f"📅 {year}년 이번 주 ({len(history[year])}개)", expanded=True):
+                        year_df = history[year].sort_values('날짜').copy()
+                        
+                        # 표시용 데이터 준비
+                        display_df = year_df[['날짜', '카테고리', '제목', '내용']].copy()
+                        display_df['날짜'] = display_df['날짜'].dt.strftime('%m/%d')
+                        
+                        # 내용 축약
+                        display_df['내용'] = display_df['내용'].fillna('').astype(str).apply(
+                            lambda x: x[:50] + ('...' if len(x) > 50 else '')
+                        )
+                        
+                        # 카테고리에 아이콘 추가
+                        display_df['카테고리'] = display_df['카테고리'].apply(
+                            lambda x: f"{category_colors.get(x, '📌')} {x}"
+                        )
+                        
+                        # 표로 표시
+                        st.dataframe(
+                            display_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "날짜": st.column_config.TextColumn("날짜", width="small"),
+                                "카테고리": st.column_config.TextColumn("카테고리", width="small"),
+                                "제목": st.column_config.TextColumn("제목", width="medium"),
+                                "내용": st.column_config.TextColumn("내용", width="large"),
+                            }
+                        )
+        
+        # 서브탭 3: 다음주
+        with week_tab3:
+            st.info("💡 다음 주를 미리 준비하세요!")
+            history = get_week_history(df, current_date, weeks_offset=1)
+            
+            if not history:
+                st.warning("다음 주 과거 기록이 없습니다.")
+            else:
+                for year in sorted(history.keys(), reverse=True):
+                    with st.expander(f"📅 {year}년 다음 주 ({len(history[year])}개)", expanded=True):
+                        year_df = history[year].sort_values('날짜').copy()
+                        
+                        # 표시용 데이터 준비
+                        display_df = year_df[['날짜', '카테고리', '제목', '내용']].copy()
+                        display_df['날짜'] = display_df['날짜'].dt.strftime('%m/%d')
+                        
+                        # 내용 축약
+                        display_df['내용'] = display_df['내용'].fillna('').astype(str).apply(
+                            lambda x: x[:50] + ('...' if len(x) > 50 else '')
+                        )
+                        
+                        # 카테고리에 아이콘 추가
+                        display_df['카테고리'] = display_df['카테고리'].apply(
+                            lambda x: f"{category_colors.get(x, '📌')} {x}"
+                        )
+                        
+                        # 표로 표시
+                        st.dataframe(
+                            display_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "날짜": st.column_config.TextColumn("날짜", width="small"),
+                                "카테고리": st.column_config.TextColumn("카테고리", width="small"),
+                                "제목": st.column_config.TextColumn("제목", width="medium"),
+                                "내용": st.column_config.TextColumn("내용", width="large"),
+                            }
+                        )
     
     # 탭 2: 다음 달 광고 추천
     with tab2:
