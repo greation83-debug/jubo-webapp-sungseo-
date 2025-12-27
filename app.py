@@ -209,21 +209,6 @@ def get_week_history(df, current_date=None, weeks_offset=0):
             history[year] = year_data
     
     return history
-        year_data = df[
-            (df['날짜'].dt.year == year) &
-            (
-                (df['날짜'].dt.isocalendar().week == current_week) |
-                (
-                    (df['날짜'].dt.month == current_month) &
-                    (df['날짜'].dt.day.between(current_date.day - 7, current_date.day + 7))
-                )
-            )
-        ]
-        
-        if not year_data.empty:
-            history[year] = year_data
-    
-    return history
 
 # 반복 이벤트 찾기
 def find_recurring_events(df, month):
