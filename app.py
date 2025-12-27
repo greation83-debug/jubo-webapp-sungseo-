@@ -38,23 +38,29 @@ def get_google_sheets_client():
 
 # 데이터 로드
 @st.cache_data(ttl=300)  # 5분 캐시
-@st.cache_data(ttl=300)
 def load_data_from_sheets():
+    """Google Sheets에서 데이터 로드"""
     try:
         client = get_google_sheets_client()
+        if not client:
+            return None
+        
+        # 시트 열기 (시트 URL 또는 이름)
         sheet_url = st.secrets["sheet_url"]
-        sh = client.open_by_url(sheet_url)
-        worksheet = sh.get_worksheet(0)
+        spreadsheet = client.open_by_url(sheet_url)
+        worksheet = spreadsheet.sheet1
+        
+        # 데이터 가져오기
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # ✅ 날짜 컬럼을 datetime으로 변환 (추가!)
+        # 날짜 컬럼 변환
         if '날짜' in df.columns:
             df['날짜'] = pd.to_datetime(df['날짜'], errors='coerce')
         
         return df
     except Exception as e:
-        st.error(f"데이터 로드 오류: {str(e)}")
+        st.error(f"데이터 로드 오류: {e}")
         return None
 
 # Gemini API 설정 - 여러 키 로테이션
@@ -151,12 +157,33 @@ def get_this_week_history(df, current_date=None):
     if current_date is None:
         current_date = datetime.now()
     
+    # 데이터 검증
+    if df is None or df.empty:
+        return {}
+    
+    # 날짜 컬럼 확인 및 변환
+    if '날짜' not in df.columns:
+        return {}
+    
+    # 날짜를 datetime으로 확실히 변환
+    df = df.copy()
+    df['날짜'] = pd.to_datetime(df['날짜'], errors='coerce')
+    
+    # NaN 제거
+    df = df.dropna(subset=['날짜'])
+    
+    if df.empty:
+        return {}
+    
     current_week = current_date.isocalendar()[1]
     current_month = current_date.month
     
     history = {}
     
-    for year in range(df['날짜'].dt.year.min(), current_date.year):
+    # 최소 연도 계산 (int로 변환)
+    min_year = int(df['날짜'].dt.year.min())
+    
+    for year in range(min_year, current_date.year):
         year_data = df[
             (df['날짜'].dt.year == year) &
             (
