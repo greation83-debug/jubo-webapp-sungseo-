@@ -348,16 +348,56 @@ def main():
         if not history:
             st.warning("과거 기록이 없습니다.")
         else:
+            # 카테고리별 색상 매핑
+            category_colors = {
+                '행사': '🎉',
+                '교육': '📚',
+                '예배': '🙏',
+                '봉사': '🤝',
+                '모임': '👥',
+                '공지': '📢',
+                '광고': '📣'
+            }
+            
             for year in sorted(history.keys(), reverse=True):
-                with st.expander(f"📅 {year}년 이맘때...", expanded=(year == max(history.keys()))):
-                    year_df = history[year]
+                with st.expander(f"📅 {year}년 이맘때 ({len(history[year])}개)", expanded=(year == max(history.keys()))):
+                    year_df = history[year].sort_values('날짜')
                     
+                    # 요약 통계
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("전체", f"{len(year_df)}개")
+                    with col2:
+                        most_common_cat = year_df['카테고리'].mode()[0] if len(year_df) > 0 else '-'
+                        st.metric("주요 카테고리", most_common_cat)
+                    with col3:
+                        date_range = f"{year_df['날짜'].min().strftime('%m/%d')} ~ {year_df['날짜'].max().strftime('%m/%d')}"
+                        st.metric("기간", date_range)
+                    
+                    st.markdown("---")
+                    
+                    # 테이블 형식으로 표시
                     for _, row in year_df.iterrows():
-                        st.markdown(f"""
-                        **{row['날짜'].strftime('%Y-%m-%d')}** [{row['카테고리']}] **{row['제목']}**
+                        col1, col2 = st.columns([3, 1])
                         
-                        {row['내용'] if pd.notna(row['내용']) else ''}
-                        """)
+                        with col1:
+                            # 카테고리 아이콘 + 제목
+                            icon = category_colors.get(row['카테고리'], '📌')
+                            st.markdown(f"**{icon} {row['제목']}**")
+                            
+                            # 내용 (짧게 표시)
+                            if pd.notna(row['내용']) and len(str(row['내용'])) > 0:
+                                content = str(row['내용'])
+                                # 50자까지만 표시, 나머지는 ... 처리
+                                short_content = content[:50] + ('...' if len(content) > 50 else '')
+                                with st.expander("📄 내용 보기"):
+                                    st.write(content)
+                                st.caption(short_content)
+                        
+                        with col2:
+                            st.caption(f"📅 {row['날짜'].strftime('%m/%d')}")
+                            st.caption(f"🏷️ {row['카테고리']}")
+                        
                         st.markdown("---")
     
     # 탭 2: 다음 달 광고 추천
